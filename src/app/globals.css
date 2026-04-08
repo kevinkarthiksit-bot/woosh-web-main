@@ -1,3 +1,10 @@
+:root {
+  --primary: #0B5ED7;
+  --secondary: #4FC3F7;
+  --accent: #E3F2FD;
+  --dark: #0A2540;
+}
+
 @import "tailwindcss";
 
 :root {
