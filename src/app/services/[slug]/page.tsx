@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { db } from "@/lib/firebase";
+import { collection, addDoc } from "firebase/firestore";
 
 const serviceData: Record<string, { name: string; price: string }[]> = {
   "car-wash": [
@@ -38,6 +40,46 @@ export default function ServicePage() {
   const [address, setAddress] = useState("");
   const [error, setError] = useState("");
 
+  // 🚀 SAVE TO FIRESTORE
+  const handleBooking = async () => {
+    if (!name || !phone || !address) {
+      setError("Please fill all fields");
+      return;
+    }
+
+    if (phone.length < 10) {
+      setError("Enter a valid phone number");
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, "bookings"), {
+        service: slug,
+        package: selectedPackage,
+        time: selectedTime,
+        name,
+        phone,
+        address,
+        status: "pending",
+        createdAt: new Date(),
+      });
+
+      setError("");
+      alert("Booking Confirmed ✅");
+
+      // Reset form
+      setSelectedPackage(null);
+      setSelectedTime(null);
+      setName("");
+      setPhone("");
+      setAddress("");
+
+    } catch (err) {
+      console.error(err);
+      alert("Error saving booking ❌");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0f172a] via-[#111827] to-black text-white p-6 md:p-10">
 
@@ -63,7 +105,6 @@ export default function ServicePage() {
             }`}
           >
             <h3 className="text-xl font-semibold">{pkg.name}</h3>
-
             <p className="mt-2 text-blue-400">{pkg.price}</p>
 
             <button
@@ -118,7 +159,7 @@ export default function ServicePage() {
             placeholder="Your Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full p-3 rounded-lg bg-white/10 border border-white/20 focus:outline-none focus:border-blue-400"
+            className="w-full p-3 rounded-lg bg-white/10 border border-white/20"
           />
 
           <input
@@ -126,50 +167,21 @@ export default function ServicePage() {
             placeholder="Phone Number"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full p-3 rounded-lg bg-white/10 border border-white/20 focus:outline-none focus:border-blue-400"
+            className="w-full p-3 rounded-lg bg-white/10 border border-white/20"
           />
 
           <textarea
             placeholder="Address"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            className="w-full p-3 rounded-lg bg-white/10 border border-white/20 focus:outline-none focus:border-blue-400"
+            className="w-full p-3 rounded-lg bg-white/10 border border-white/20"
           />
 
-          {/* ERROR */}
-          {error && (
-            <p className="text-red-400 text-sm">
-              {error}
-            </p>
-          )}
+          {error && <p className="text-red-400 text-sm">{error}</p>}
 
-          {/* CONFIRM */}
           <button
+            onClick={handleBooking}
             disabled={!name || !phone || !address}
-            onClick={() => {
-              if (!name || !phone || !address) {
-                setError("Please fill all fields");
-                return;
-              }
-
-              if (phone.length < 10) {
-                setError("Enter a valid phone number");
-                return;
-              }
-
-              setError("");
-
-              console.log({
-                service: slug,
-                package: selectedPackage,
-                time: selectedTime,
-                name,
-                phone,
-                address,
-              });
-
-              alert("Booking Confirmed 🚀");
-            }}
             className={`w-full py-3 rounded-lg font-semibold transition ${
               !name || !phone || !address
                 ? "bg-gray-500 cursor-not-allowed"
