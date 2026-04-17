@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection,
-  getDocs,
   query,
   orderBy,
   doc,
   updateDoc,
+  setDoc,
+  getDoc,
+  onSnapshot,
 } from "firebase/firestore";
 
 type Booking = {
@@ -28,7 +30,92 @@ export default function AdminPage() {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
 
-  // ✅ UPDATE STATUS
+  // SLOT SETTINGS
+  const [defaultCapacity, setDefaultCapacity] = useState(3);
+  const [slotInputs, setSlotInputs] = useState<any>({});
+  const [blockedDates, setBlockedDates] = useState<string[]>([]);
+  const [newDate, setNewDate] = useState("");
+
+  const times = ["9:00 AM", "11:00 AM", "1:00 PM", "3:00 PM", "5:00 PM", "7:00 PM"];
+
+  // REAL-TIME BOOKINGS
+  useEffect(() => {
+    const q = query(
+      collection(db, "bookings"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Booking[];
+
+      setBookings(data);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // FETCH SLOT SETTINGS
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const ref = doc(db, "slotSettings", "global");
+        const snapshot = await getDoc(ref);
+
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+
+          setDefaultCapacity(
+            data.defaultCapacity !== undefined ? data.defaultCapacity : 3
+          );
+
+          const cleaned: any = {};
+          Object.keys(data.customSlots || {}).forEach((key) => {
+            cleaned[key.trim()] = data.customSlots[key];
+          });
+
+          setSlotInputs(cleaned);
+          setBlockedDates(data.blockedDates || []);
+        }
+      } catch (err) {
+        console.error("Error fetching settings:", err);
+      }
+    };
+
+    fetchSettings();
+  }, []);
+
+  // SAVE SETTINGS
+  const saveSettings = async () => {
+    if (defaultCapacity < 1) {
+      alert("Capacity must be at least 1");
+      return;
+    }
+
+    try {
+      const ref = doc(db, "slotSettings", "global");
+
+      const cleanedSlots: any = {};
+      Object.keys(slotInputs).forEach((key) => {
+        cleanedSlots[key.trim()] = Number(slotInputs[key]);
+      });
+
+      await setDoc(ref, {
+        defaultCapacity,
+        customSlots: cleanedSlots,
+        blockedDates,
+      });
+
+      alert("Settings updated ✅");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update ❌");
+    }
+  };
+
+  // UPDATE STATUS
   const updateStatus = async (
     id: string,
     newStatus: string,
@@ -41,47 +128,113 @@ export default function AdminPage() {
         status: newStatus,
         ...(reason && { rejectionReason: reason }),
       });
-
-      setBookings((prev) =>
-        prev.map((b) =>
-          b.id === id
-            ? { ...b, status: newStatus, rejectionReason: reason }
-            : b
-        )
-      );
     } catch (err) {
       console.error(err);
     }
   };
 
-  // ✅ FETCH BOOKINGS
-  useEffect(() => {
-    const fetchBookings = async () => {
-      const q = query(
-        collection(db, "bookings"),
-        orderBy("createdAt", "desc")
-      );
-
-      const snapshot = await getDocs(q);
-
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Booking[];
-
-      setBookings(data);
-    };
-
-    fetchBookings();
-  }, []);
-
   return (
     <div className="min-h-screen bg-black text-white pt-28 md:pt-32 p-6 md:p-10">
-      
-      {/* TITLE */}
-      <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
 
-      {/* FILTER BUTTONS */}
+      {/* HEADER */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+
+        <a
+          href="/admin/analytics"
+          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm"
+        >
+          View Analytics
+        </a>
+      </div>
+
+      {/* SLOT SETTINGS */}
+      <div className="mb-10 p-6 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-md">
+        <h2 className="text-xl font-semibold mb-4">Slot Settings</h2>
+
+        {/* DEFAULT CAPACITY */}
+        <div className="mb-6">
+          <p className="mb-2 text-sm text-gray-400">Default Capacity</p>
+          <input
+            type="number"
+            value={defaultCapacity}
+            onChange={(e) => setDefaultCapacity(Number(e.target.value))}
+            className="p-3 rounded-lg bg-white/10 border border-white/20 w-40"
+          />
+        </div>
+
+        {/* SLOT CAPACITY */}
+        <div className="mb-6">
+          <p className="mb-3 text-sm text-gray-400">Custom Slot Capacity</p>
+
+          {times.map((t) => (
+            <div key={t} className="flex items-center gap-3 mb-2">
+              <span className="w-24">{t}</span>
+              <input
+                type="number"
+                value={slotInputs[t] || ""}
+                onChange={(e) =>
+                  setSlotInputs({
+                    ...slotInputs,
+                    [t.trim()]: Number(e.target.value),
+                  })
+                }
+                className="p-2 rounded bg-white/10 border border-white/20 w-24"
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* BLOCK DATES */}
+        <div className="mb-6">
+          <p className="mb-2 text-sm text-gray-400">Blocked Dates</p>
+
+          <div className="flex gap-3 mb-3">
+            <input
+              type="date"
+              value={newDate}
+              onChange={(e) => setNewDate(e.target.value)}
+              className="p-2 rounded bg-white/10 border border-white/20"
+            />
+
+            <button
+              onClick={() => {
+                if (!newDate) return;
+                if (blockedDates.includes(newDate)) return;
+
+                setBlockedDates([...blockedDates, newDate]);
+                setNewDate("");
+              }}
+              className="px-4 py-2 bg-red-600 rounded"
+            >
+              Add
+            </button>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            {blockedDates.map((d) => (
+              <span
+                key={d}
+                onClick={() =>
+                  setBlockedDates(blockedDates.filter((x) => x !== d))
+                }
+                className="px-2 py-1 bg-red-500/20 rounded cursor-pointer"
+              >
+                {d}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <button
+          onClick={saveSettings}
+          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg"
+        >
+          Save Settings
+        </button>
+      </div>
+
+      {/* FILTER */}
       <div className="flex gap-3 mb-6 flex-wrap">
         {["all", "pending", "confirmed", "completed", "rejected"].map((f) => (
           <button
@@ -98,7 +251,7 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {/* SEARCH INPUT */}
+      {/* SEARCH */}
       <input
         type="text"
         placeholder="Search by name, phone, service..."
@@ -129,9 +282,8 @@ export default function AdminPage() {
             .map((b) => (
               <div
                 key={b.id}
-                className="p-6 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 backdrop-blur-md shadow-lg hover:shadow-blue-500/10 transition"
+                className="p-6 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-md"
               >
-                {/* INFO */}
                 <div className="space-y-1 text-sm">
                   <p><strong>Service:</strong> {b.service}</p>
                   <p><strong>Package:</strong> {b.package}</p>
@@ -140,58 +292,34 @@ export default function AdminPage() {
                   <p><strong>Phone:</strong> {b.phone}</p>
                 </div>
 
-                <p className="mt-2 text-sm text-gray-400">
-                  {b.address}
-                </p>
+                <p className="mt-2 text-sm text-gray-400">{b.address}</p>
 
-                {/* STATUS */}
                 <p className="mt-3">
-                  <strong>Status:</strong>
-                  <span
-                    className={`ml-2 px-2 py-1 rounded text-sm capitalize ${
-                      (b.status || "pending") === "pending"
-                        ? "bg-yellow-500/20 text-yellow-400"
-                        : b.status === "confirmed"
-                        ? "bg-blue-500/20 text-blue-400"
-                        : b.status === "completed"
-                        ? "bg-green-500/20 text-green-400"
-                        : "bg-red-500/20 text-red-400"
-                    }`}
-                  >
-                    {b.status || "pending"}
-                  </span>
+                  <strong>Status:</strong> {b.status || "pending"}
                 </p>
 
-                {/* REJECTION REASON */}
-                {b.status === "rejected" && b.rejectionReason && (
-                  <p className="text-sm text-red-400 mt-2">
-                    Reason: {b.rejectionReason}
-                  </p>
-                )}
-
-                {/* ACTION BUTTONS */}
                 <div className="mt-4 flex gap-2 flex-wrap">
                   <button
                     onClick={() => updateStatus(b.id, "confirmed")}
-                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm"
+                    className="px-3 py-1 bg-blue-600 rounded-lg text-sm"
                   >
                     Confirm
                   </button>
 
                   <button
                     onClick={() => updateStatus(b.id, "completed")}
-                    className="px-3 py-1 bg-green-600 hover:bg-green-700 rounded-lg text-sm"
+                    className="px-3 py-1 bg-green-600 rounded-lg text-sm"
                   >
                     Complete
                   </button>
 
                   <button
                     onClick={() => {
-                      const reason = prompt("Reason for rejection?");
+                      const reason = prompt("Reason?");
                       if (!reason) return;
                       updateStatus(b.id, "rejected", reason);
                     }}
-                    className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded-lg text-sm"
+                    className="px-3 py-1 bg-red-600 rounded-lg text-sm"
                   >
                     Reject
                   </button>
